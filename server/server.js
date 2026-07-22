@@ -24,7 +24,7 @@ const PORT = process.env.PORT || 5000;
 
 // --- Middleware ---
 app.use(cors()); // allows the React frontend (a different port) to call this API
-app.use(express.json({ limit: "2mb" })); // lets us read JSON request bodies (e.g. pasted document text)
+app.use(express.json({ limit: "12mb" })); // pasted text + base64 document images for Ask Sema
 
 // --- Routes ---
 // Anything hitting /api/updates goes to routes/updates.js, and so on.
