@@ -26,7 +26,7 @@ router.post("/", async (req, res) => {
     console.error("[routes/haveYourSay] failed:", err.message);
     res.status(500).json({
       error:
-        "Sema could not process that right now. Make sure Ollama and Gemma 4 are running (see README.md).",
+        "Sema could not process that right now. Check GOOGLE_API_KEY in server/.env and your API quota (see README.md).",
     });
   }
 });
