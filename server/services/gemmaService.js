@@ -18,7 +18,25 @@
 
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const GEMMA_MODEL = process.env.GEMMA_MODEL || "gemma-4-26b-a4b-it";
+// Multimodal reads (photos, scanned PDF pages) use a vision-capable Gemini model.
+const VISION_MODEL = process.env.GEMINI_VISION_MODEL || "gemini-2.0-flash";
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+
+const EXPLAIN_DOCUMENT_INSTRUCTION = `
+You are explaining a government or public document to a Kenyan citizen who
+may not be familiar with formal or legal language. Do not invent facts that
+are not present in the text. If the text is unclear or incomplete, say so
+plainly instead of guessing.
+
+Return ONLY one JSON object with EXACTLY these keys (no markdown, no code fences, no reasoning text):
+{
+  "documentType": "short label for what kind of document this is",
+  "summary": "one sentence plain-language summary",
+  "whatIsHappening": "1-2 short sentences",
+  "whoIsAffected": "who this affects",
+  "whatCanYouDo": "concrete next step, or empty string if none",
+  "deadline": "YYYY-MM-DD or null"
+}`;
 
 // Gemma 4 has a built-in "thinking" mode: before its real answer, it can
 // generate an internal reasoning part marked "thought": true. If we don't
@@ -41,18 +59,81 @@ function extractAnswerText(data) {
   return answerParts.map((p) => p.text).join("").trim();
 }
 
+function tryParseJsonObject(str) {
+  try {
+    const parsed = JSON.parse(str);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch (_) {
+    /* try next strategy */
+  }
+  return null;
+}
+
+/** Prefer ```json fenced blocks; Gemma often puts the final answer in the last fence. */
+function extractJsonFromFence(text) {
+  const fences = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)];
+  for (let i = fences.length - 1; i >= 0; i--) {
+    const parsed = tryParseJsonObject(fences[i][1].trim());
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+/** Scan for balanced { ... } substrings and parse each (avoids first-{ to last-} bugs). */
+function extractBalancedJsonCandidates(text) {
+  const candidates = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== "{") continue;
+
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+
+    for (let j = i; j < text.length; j++) {
+      const c = text[j];
+      if (inString) {
+        if (escape) escape = false;
+        else if (c === "\\") escape = true;
+        else if (c === '"') inString = false;
+        continue;
+      }
+      if (c === '"') inString = true;
+      else if (c === "{") depth++;
+      else if (c === "}") {
+        depth--;
+        if (depth === 0) {
+          const parsed = tryParseJsonObject(text.slice(i, j + 1));
+          if (parsed) candidates.push(parsed);
+          break;
+        }
+      }
+    }
+  }
+  return candidates;
+}
+
 /**
  * Pulls a JSON object out of a text blob even if the model added stray
- * text before/after it (e.g. a leftover "Here is the JSON:" preamble).
- * This is a safety net on top of THINKING_CONFIG / extractAnswerText.
+ * text, markdown fences, or chain-of-thought before/after the JSON.
  */
 function extractJsonObject(text) {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error(`Gemma did not return any JSON. Raw reply was: ${text}`);
+  const trimmed = text.trim();
+
+  let parsed = tryParseJsonObject(trimmed);
+  if (parsed) return parsed;
+
+  parsed = extractJsonFromFence(text);
+  if (parsed) return parsed;
+
+  const candidates = extractBalancedJsonCandidates(text);
+  if (candidates.length > 0) {
+    return candidates[candidates.length - 1];
   }
-  return JSON.parse(text.slice(start, end + 1));
+
+  const preview = trimmed.length > 800 ? `${trimmed.slice(0, 800)}…` : trimmed;
+  throw new Error(`Gemma did not return valid JSON. Raw reply was: ${preview}`);
 }
 
 /**
@@ -95,6 +176,56 @@ async function askGemmaForJSON(systemInstruction, userContent) {
         temperature: 0.2, // low temperature = more consistent, factual output
         responseMimeType: "application/json", // forces valid JSON output
         thinkingConfig: THINKING_CONFIG, // keeps Gemma's reasoning out of the answer
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(
+      `Gemma API request failed (${response.status}): ${errText}. ` +
+        `Check that GOOGLE_API_KEY in server/.env is correct and has quota - see README.md.`
+    );
+  }
+
+  const data = await response.json();
+  const rawText = extractAnswerText(data);
+
+  if (!rawText) {
+    throw new Error(`Gemma returned no usable content. Raw response: ${JSON.stringify(data)}`);
+  }
+
+  return extractJsonObject(rawText);
+}
+
+/**
+ * JSON helper when the user message includes an image (or scanned page).
+ */
+async function askGemmaForJSONWithParts(systemInstruction, userParts, model) {
+  if (!GOOGLE_API_KEY) {
+    throw new Error(
+      "GOOGLE_API_KEY is missing. Add it to server/.env - see README.md 'Getting a Gemma 4 API key'."
+    );
+  }
+
+  const url = `${API_BASE}/${model}:generateContent?key=${GOOGLE_API_KEY}`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: {
+        parts: [{ text: systemInstruction }],
+      },
+      contents: [
+        {
+          role: "user",
+          parts: userParts,
+        },
+      ],
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: "application/json",
       },
     }),
   });
@@ -173,7 +304,7 @@ You are processing civic information for Kenyan citizens.
 Read the official announcement below and respond in simple, plain language.
 Do not invent facts that are not present in the text.
 
-Return JSON with EXACTLY these keys:
+Return ONLY one JSON object with EXACTLY these keys (no markdown, no code fences, no reasoning text):
 {
   "summary": "one sentence plain-language summary",
   "whatIsHappening": "1-2 short sentences explaining the announcement",
@@ -198,23 +329,27 @@ Return JSON with EXACTLY these keys:
  * it using the same what/who/why/action structure as the main feed.
  */
 async function explainDocument(rawText) {
-  const systemInstruction = `
-You are explaining a government or public document to a Kenyan citizen who
-may not be familiar with formal or legal language. Do not invent facts that
-are not present in the text. If the text is unclear or incomplete, say so
-plainly instead of guessing.
+  return askGemmaForJSON(EXPLAIN_DOCUMENT_INSTRUCTION, rawText);
+}
 
-Return JSON with EXACTLY these keys:
-{
-  "documentType": "short label for what kind of document this is",
-  "summary": "one sentence plain-language summary",
-  "whatIsHappening": "1-2 short sentences",
-  "whoIsAffected": "who this affects",
-  "whatCanYouDo": "concrete next step, or empty string if none",
-  "deadline": "YYYY-MM-DD or null"
-}`;
+/**
+ * Reads a photo or scanned page and explains it with the same JSON shape
+ * as explainDocument (used when the user uploads JPG/PNG or a scanned PDF).
+ */
+async function explainDocumentFromImage(base64Data, mimeType) {
+  const userParts = [
+    {
+      inlineData: {
+        mimeType,
+        data: base64Data,
+      },
+    },
+    {
+      text: "Read all visible text in this document image. Then explain it for the citizen using the required JSON format.",
+    },
+  ];
 
-  return askGemmaForJSON(systemInstruction, rawText);
+  return askGemmaForJSONWithParts(EXPLAIN_DOCUMENT_INSTRUCTION, userParts, VISION_MODEL);
 }
 
 /**
@@ -239,4 +374,9 @@ rewritten response text - no labels, no JSON, no extra commentary.`;
   return { structuredResponse };
 }
 
-module.exports = { processArticleWithGemma, explainDocument, structureOpinion };
+module.exports = {
+  processArticleWithGemma,
+  explainDocument,
+  explainDocumentFromImage,
+  structureOpinion,
+};
