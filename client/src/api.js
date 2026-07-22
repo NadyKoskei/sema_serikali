@@ -34,12 +34,21 @@ export async function fetchUpdateById(id) {
   return handleResponse(res);
 }
 
-// Ask Sema to explain a piece of pasted text / document content.
-export async function askSema(text) {
+// Ask Sema to explain pasted text and/or an uploaded document image.
+export async function askSema({ text, imageBase64, mimeType } = {}) {
+  const body = {};
+  if (imageBase64 && mimeType) {
+    body.imageBase64 = imageBase64;
+    body.mimeType = mimeType;
+  }
+  if (text && text.trim()) {
+    body.text = text.trim();
+  }
+
   const res = await fetch(`${BASE_URL}/ask-sema`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(body),
   });
   return handleResponse(res);
 }
