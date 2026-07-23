@@ -13,7 +13,9 @@ require("dotenv").config(); // loads variables from server/.env into process.env
 
 const express = require("express");
 const cors = require("cors");
+const net = require("net");
 const connectDB = require("./config/db");
+const { isPortAvailable } = require("./utils/port");
 
 const updatesRoutes = require("./routes/updates");
 const askSemaRoutes = require("./routes/askSema");
@@ -38,8 +40,21 @@ app.get("/api/health", (req, res) => {
 });
 
 // --- Start the server after MongoDB is connected ---
-connectDB().then(() => {
-  app.listen(PORT, () => {
-    console.log(`[server] Sema Serikali API listening on http://localhost:${PORT}`);
+connectDB()
+  .then(async () => {
+    const available = await isPortAvailable(PORT);
+    if (!available) {
+      console.warn(
+        `[server] Port ${PORT} is already in use. Assuming another instance is already running, so this one will stay idle.`
+      );
+      return;
+    }
+
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`[server] Sema Serikali API listening on http://localhost:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error("[server] Failed to start the server:", err);
+    process.exit(1);
   });
-});
