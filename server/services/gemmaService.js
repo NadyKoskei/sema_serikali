@@ -19,7 +19,7 @@
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const GEMMA_MODEL = process.env.GEMMA_MODEL || "gemma-4-26b-a4b-it";
 // Multimodal reads (photos, scanned PDF pages) use a vision-capable Gemini model.
-const VISION_MODEL = process.env.GEMINI_VISION_MODEL || "gemini-2.0-flash";
+const VISION_MODEL = process.env.GEMINI_VISION_MODEL || "gemma-4-26b-a4b-it";
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 const EXPLAIN_DOCUMENT_INSTRUCTION = `
