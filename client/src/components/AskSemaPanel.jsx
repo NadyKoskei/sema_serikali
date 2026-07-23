@@ -115,6 +115,12 @@ export default function AskSemaPanel() {
     e.stopPropagation();
   }
 
+  function handleUploadBoxClick() {
+    if (!loading) {
+      fileInputRef.current?.click();
+    }
+  }
+
   function handleDrop(e) {
     e.preventDefault();
     e.stopPropagation();
@@ -139,8 +145,17 @@ export default function AskSemaPanel() {
         className="upload-box"
         htmlFor="sema-file-input"
         style={{ cursor: loading ? "wait" : "pointer", display: "block" }}
+        onClick={handleUploadBoxClick}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleUploadBoxClick();
+          }
+        }}
+        tabIndex={0}
+        role="button"
       >
         <input
           ref={fileInputRef}

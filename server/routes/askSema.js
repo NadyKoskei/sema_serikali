@@ -36,11 +36,12 @@ router.post("/", async (req, res) => {
 
     res.json(explanation);
   } catch (err) {
-    console.error("[routes/askSema] failed:", err.message);
-    res.status(500).json({
-      error:
-        "Sema could not process that right now. Check GOOGLE_API_KEY in server/.env and your API quota (see README.md).",
-    });
+    console.error("[routes/askSema] failed:", err);
+    // Surface the underlying error message to help debugging image/vision issues
+    // during development. In production you may want to hide implementation
+    // details or map specific errors to user-friendly messages.
+    const message = err && err.message ? err.message : "Sema could not process that right now.";
+    res.status(500).json({ error: message });
   }
 });
 

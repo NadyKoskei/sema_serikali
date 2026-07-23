@@ -13,9 +13,25 @@ const ACCEPTED_TYPES = new Set([
   "image/png",
 ]);
 
+function getNormalizedFileType(file) {
+  const declaredType = file?.type?.toLowerCase();
+  if (declaredType && ACCEPTED_TYPES.has(declaredType)) {
+    return declaredType;
+  }
+
+  const fileName = (file?.name || "").toLowerCase();
+  if (fileName.endsWith(".pdf")) return "application/pdf";
+  if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) return "image/jpeg";
+  if (fileName.endsWith(".png")) return "image/png";
+
+  return declaredType || "";
+}
+
 export function validateAskSemaFile(file) {
   if (!file) return "No file selected.";
-  if (!ACCEPTED_TYPES.has(file.type)) {
+
+  const normalizedType = getNormalizedFileType(file);
+  if (!ACCEPTED_TYPES.has(normalizedType)) {
     return "Please upload a PDF, JPG, or PNG file.";
   }
   if (file.size > MAX_FILE_BYTES) {
@@ -25,11 +41,11 @@ export function validateAskSemaFile(file) {
 }
 
 export function isImageFile(file) {
-  return file.type.startsWith("image/");
+  return getNormalizedFileType(file).startsWith("image/");
 }
 
 export function isPdfFile(file) {
-  return file.type === "application/pdf";
+  return getNormalizedFileType(file) === "application/pdf";
 }
 
 export function readFileAsDataUrl(file) {
