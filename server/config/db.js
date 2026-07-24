@@ -8,7 +8,7 @@
 const mongoose = require("mongoose");
 
 async function connectDB() {
-  const uri = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/sema_serikali";
+  const uri = process.env.MONGO_URI || "mongodb+srv://cherotichnady_db_user:dkXqgXR6WuoicGu5@semaserikali.32vcagx.mongodb.net";
 
   try {
     // mongoose.connect returns a promise, so we await it.
