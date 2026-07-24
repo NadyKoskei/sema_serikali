@@ -51,7 +51,7 @@ connectDB()
     }
 
     app.listen(PORT, "0.0.0.0", () => {
-      console.log(`[server] Sema Serikali API listening on http://localhost:${PORT}`);
+      console.log(`[server] Sema Serikali API listening on https://sema-serikali.onrender.com`);
     });
   })
   .catch((err) => {
