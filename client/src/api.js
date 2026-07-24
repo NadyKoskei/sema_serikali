@@ -5,14 +5,17 @@
 // only change it in one place instead of hunting through components.
 // -----------------------------------------------------------------------
 
-// Because of the Vite proxy set up in vite.config.js, we can just use
-// relative paths like "/api/updates" and it works in development.
-const BASE_URL = "/api";
+// In development, Vite can proxy /api to the local backend.
+// In production, we use the deployed Render URL from VITE_API_URL.
+const API_ROOT = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
+const BASE_URL = API_ROOT.endsWith("/api") ? API_ROOT : `${API_ROOT}/api`;
 
 async function handleResponse(response) {
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || `Request failed with status ${response.status}`);
+    throw new Error(
+      body.error || `Request failed with status ${response.status}`,
+    );
   }
   return response.json();
 }
